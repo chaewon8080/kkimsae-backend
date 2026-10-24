@@ -19,7 +19,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
+import com.example.kkimsae_backend.repository.TimelineEventRepository;
 import java.util.List;
 
 @Service
@@ -29,6 +29,7 @@ public class IncidentService {
     private final IncidentRepository incidentRepository;
     private final IncidentClueRepository incidentClueRepository;
     private final MemberRepository memberRepository;
+    private final TimelineEventRepository timelineEventRepository;
 
     @Transactional
     public IncidentResponse create(
@@ -175,10 +176,15 @@ public class IncidentService {
                         "사건을 찾을 수 없습니다."
                 ));
 
-        // 외래 키로 연결된 단서부터 삭제
+        // 타임라인 삭제
+        timelineEventRepository.deleteByIncident_Id(incidentId);
+        timelineEventRepository.flush();
+
+        // 단서 삭제
         incidentClueRepository.deleteByIncident_Id(incidentId);
         incidentClueRepository.flush();
 
+        // 사건 삭제
         incidentRepository.delete(incident);
     }
 
