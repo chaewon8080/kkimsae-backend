@@ -13,6 +13,7 @@ import com.example.kkimsae_backend.repository.IncidentClueRepository;
 import com.example.kkimsae_backend.repository.IncidentRepository;
 import com.example.kkimsae_backend.repository.MemberRepository;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import com.example.kkimsae_backend.repository.TimelineEventRepository;
 import java.util.List;
+import com.example.kkimsae_backend.repository.CasePublicationRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +32,8 @@ public class IncidentService {
     private final IncidentClueRepository incidentClueRepository;
     private final MemberRepository memberRepository;
     private final TimelineEventRepository timelineEventRepository;
+    private final CasePublicationRepository casePublicationRepository;
+    private final EntityManager entityManager;
 
     @Transactional
     public IncidentResponse create(
@@ -175,6 +179,16 @@ public class IncidentService {
                         HttpStatus.NOT_FOUND,
                         "사건을 찾을 수 없습니다."
                 ));
+
+        // 공개 신청과 동일한 사건 잠금을 사용합니다.
+        entityManager.lock(
+                incident,
+                jakarta.persistence.LockModeType.PESSIMISTIC_WRITE
+        );
+
+        // 공개 사례 삭제
+        casePublicationRepository.deleteByIncidentId(incidentId);
+        casePublicationRepository.flush();
 
         // 타임라인 삭제
         timelineEventRepository.deleteByIncident_Id(incidentId);
