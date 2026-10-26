@@ -23,6 +23,9 @@ import org.springframework.web.server.ResponseStatusException;
 import com.example.kkimsae_backend.repository.TimelineEventRepository;
 import java.util.List;
 import com.example.kkimsae_backend.repository.CasePublicationRepository;
+import com.example.kkimsae_backend.entity.IncidentImage;
+import com.example.kkimsae_backend.repository.IncidentImageRepository;
+
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +37,8 @@ public class IncidentService {
     private final TimelineEventRepository timelineEventRepository;
     private final CasePublicationRepository casePublicationRepository;
     private final EntityManager entityManager;
-
+    private final IncidentImageRepository incidentImageRepository;
+    private final IncidentImageService incidentImageService;
     @Transactional
     public IncidentResponse create(
             Long memberId,
@@ -78,7 +82,6 @@ public class IncidentService {
                 .map(IncidentSummaryResponse::from)
                 .toList();
     }
-
     @Transactional(readOnly = true)
     public IncidentResponse getMyIncident(
             Long memberId,
@@ -94,7 +97,14 @@ public class IncidentService {
         List<IncidentClue> clues = incidentClueRepository
                 .findByIncident_IdOrderByIdAsc(incidentId);
 
-        return IncidentResponse.from(incident, clues);
+        List<IncidentImage> images = incidentImageRepository
+                .findByIncident_IdOrderByUploadedAtDescIdDesc(incidentId);
+
+        return IncidentResponse.from(
+                incident,
+                clues,
+                images
+        );
     }
 
     private IncidentClue createClue(
@@ -165,7 +175,15 @@ public class IncidentService {
         List<IncidentClue> savedClues =
                 incidentClueRepository.saveAll(newClues);
 
-        return IncidentResponse.from(incident, savedClues);
+        List<IncidentImage> images = incidentImageRepository
+                .findByIncident_IdOrderByUploadedAtDescIdDesc(incidentId);
+
+        return IncidentResponse.from(
+                incident,
+                savedClues,
+                images
+        );
+
     }
 
     @Transactional
@@ -180,11 +198,13 @@ public class IncidentService {
                         "사건을 찾을 수 없습니다."
                 ));
 
-        // 공개 신청과 동일한 사건 잠금을 사용합니다.
         entityManager.lock(
                 incident,
                 jakarta.persistence.LockModeType.PESSIMISTIC_WRITE
         );
+
+        // 사진 DB 정보 삭제 + 커밋 후 실제 사진 삭제
+        incidentImageService.deleteForIncident(incidentId);
 
         // 공개 사례 삭제
         casePublicationRepository.deleteByIncidentId(incidentId);
@@ -201,6 +221,5 @@ public class IncidentService {
         // 사건 삭제
         incidentRepository.delete(incident);
     }
-
 
 }

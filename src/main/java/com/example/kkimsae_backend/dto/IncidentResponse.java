@@ -3,7 +3,7 @@ package com.example.kkimsae_backend.dto;
 import com.example.kkimsae_backend.entity.ClueType;
 import com.example.kkimsae_backend.entity.Incident;
 import com.example.kkimsae_backend.entity.IncidentClue;
-
+import com.example.kkimsae_backend.entity.IncidentImage;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -23,10 +23,21 @@ public class IncidentResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<ClueResponse> clues;
+    private List<IncidentImageResponse> images;
 
+    // 새 사건 생성 시 사용
     public static IncidentResponse from(
             Incident incident,
             List<IncidentClue> clues
+    ) {
+        return from(incident, clues, List.of());
+    }
+
+    // 사건 상세 조회·수정 시 사용
+    public static IncidentResponse from(
+            Incident incident,
+            List<IncidentClue> clues,
+            List<IncidentImage> images
     ) {
         return new IncidentResponse(
                 incident.getId(),
@@ -39,6 +50,9 @@ public class IncidentResponse {
                 incident.getUpdatedAt(),
                 clues.stream()
                         .map(ClueResponse::from)
+                        .toList(),
+                images.stream()
+                        .map(IncidentImageResponse::from)
                         .toList()
         );
     }

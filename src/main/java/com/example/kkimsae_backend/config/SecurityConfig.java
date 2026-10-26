@@ -59,6 +59,12 @@ public class SecurityConfig {
                                 "/api/members/reissue",
                                 "/api/members/logout",
                                 "/api/analysis"
+
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/public-cases/search",
+                                "/api/public-cases/*"
                         ).permitAll()
 
                         .requestMatchers("/error").permitAll()
