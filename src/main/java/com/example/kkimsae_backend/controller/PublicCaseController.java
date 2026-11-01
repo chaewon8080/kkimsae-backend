@@ -19,7 +19,7 @@ public class PublicCaseController {
 
     @GetMapping("/search")
     public ResponseEntity<PublicCaseSearchResponse> search(
-            @RequestParam("query") String query,
+            @RequestParam(name="query", defaultValue = "") String query,
 
             @RequestParam(
                     name = "page",

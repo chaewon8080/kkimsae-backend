@@ -40,12 +40,7 @@ public class PublicCaseService {
             int page,
             int size
     ) {
-        if (query == null || query.isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "검색어를 입력해주세요."
-            );
-        }
+
 
         if (page < 0 || size < 1 || size > 100) {
             throw new ResponseStatusException(
@@ -54,8 +49,7 @@ public class PublicCaseService {
             );
         }
 
-        String normalizedQuery = query.trim();
-
+        String normalizedQuery = query == null ? "" : query.trim();
         List<String> keywords = Arrays.stream(
                         normalizedQuery
                                 .toLowerCase(Locale.ROOT)
