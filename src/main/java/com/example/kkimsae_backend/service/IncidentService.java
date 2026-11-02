@@ -26,10 +26,21 @@ import com.example.kkimsae_backend.repository.CasePublicationRepository;
 import com.example.kkimsae_backend.entity.IncidentImage;
 import com.example.kkimsae_backend.repository.IncidentImageRepository;
 
+import org.springframework.beans.factory.annotation.Value;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
+import java.time.Duration;
+import com.example.kkimsae_backend.dto.IncidentImageResponse;
 @Service
 @RequiredArgsConstructor
 public class IncidentService {
+
+    private final S3Presigner s3Presigner;
+
+    @Value("${app.s3.bucket}")
+    private String imageBucket;
 
     private final IncidentRepository incidentRepository;
     private final IncidentClueRepository incidentClueRepository;
@@ -87,6 +98,13 @@ public class IncidentService {
             Long memberId,
             Long incidentId
     ) {
+        if (memberId == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "다시 로그인해주세요."
+            );
+        }
+
         Incident incident = incidentRepository
                 .findByIdAndMember_Id(incidentId, memberId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -100,11 +118,36 @@ public class IncidentService {
         List<IncidentImage> images = incidentImageRepository
                 .findByIncident_IdOrderByUploadedAtDescIdDesc(incidentId);
 
-        return IncidentResponse.from(
-                incident,
-                clues,
-                images
-        );
+        List<IncidentImageResponse> imageResponses = images.stream()
+                .map(image -> {
+                    // 기존 로컬 저장 파일에는 S3 조회 URL을 만들지 않음
+                    String url = image.getStoredName().startsWith("incidents/")
+                            ? createImageUrl(image.getStoredName())
+                            : null;
+
+                    return IncidentImageResponse.from(image, url);
+                })
+                .toList();
+
+        return IncidentResponse.from(incident, clues)
+                .withImages(imageResponses);
+    }
+
+    private String createImageUrl(String key) {
+        GetObjectRequest objectRequest = GetObjectRequest.builder()
+                .bucket(imageBucket)
+                .key(key)
+                .build();
+
+        GetObjectPresignRequest presignRequest =
+                GetObjectPresignRequest.builder()
+                        .signatureDuration(Duration.ofMinutes(10))
+                        .getObjectRequest(objectRequest)
+                        .build();
+
+        return s3Presigner.presignGetObject(presignRequest)
+                .url()
+                .toString();
     }
 
     private IncidentClue createClue(

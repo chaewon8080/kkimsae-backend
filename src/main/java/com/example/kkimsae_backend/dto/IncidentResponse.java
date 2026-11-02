@@ -57,6 +57,13 @@ public class IncidentResponse {
         );
     }
 
+    public IncidentResponse withImages(
+            List<IncidentImageResponse> images
+    ) {
+        this.images = images;
+        return this;
+    }
+
     @Getter
     @AllArgsConstructor
     public static class ClueResponse {

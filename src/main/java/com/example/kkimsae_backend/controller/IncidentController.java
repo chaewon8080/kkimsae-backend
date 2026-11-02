@@ -3,6 +3,7 @@ package com.example.kkimsae_backend.controller;
 import com.example.kkimsae_backend.dto.IncidentCreateRequest;
 import com.example.kkimsae_backend.dto.IncidentResponse;
 import com.example.kkimsae_backend.dto.IncidentSummaryResponse;
+import com.example.kkimsae_backend.service.IncidentImageService;
 import com.example.kkimsae_backend.service.IncidentService;
 
 import jakarta.validation.Valid;
@@ -21,6 +22,7 @@ import java.util.List;
 public class IncidentController {
 
     private final IncidentService incidentService;
+    private final IncidentImageService incidentImageService;
 
     @PostMapping
     public ResponseEntity<IncidentResponse> create(
@@ -80,6 +82,21 @@ public class IncidentController {
             @PathVariable("incidentId") Long incidentId
     ) {
         incidentService.delete(memberId, incidentId);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{imageId}")
+    public ResponseEntity<Void> delete(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable("incidentId") Long incidentId,
+            @PathVariable("imageId") Long imageId
+    ) {
+        incidentImageService.deleteImage(
+                memberId,
+                incidentId,
+                imageId
+        );
 
         return ResponseEntity.noContent().build();
     }

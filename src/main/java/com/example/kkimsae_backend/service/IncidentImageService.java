@@ -25,6 +25,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+
+import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+
 @Slf4j
 @Service
 public class IncidentImageService {
@@ -34,21 +41,21 @@ public class IncidentImageService {
     private final IncidentImageRepository incidentImageRepository;
     private final IncidentRepository incidentRepository;
     private final EntityManager entityManager;
-    private final Path uploadDirectory;
+    private final S3Client s3Client;
+    private final String bucket;
 
     public IncidentImageService(
             IncidentImageRepository incidentImageRepository,
             IncidentRepository incidentRepository,
             EntityManager entityManager,
-            @Value("${app.incident-image.upload-dir:./uploads/incident-images}")
-            String uploadDirectory
+            S3Client s3Client,
+            @Value("${app.s3.bucket}") String bucket
     ) {
         this.incidentImageRepository = incidentImageRepository;
         this.incidentRepository = incidentRepository;
         this.entityManager = entityManager;
-        this.uploadDirectory = Path.of(uploadDirectory)
-                .toAbsolutePath()
-                .normalize();
+        this.s3Client = s3Client;
+        this.bucket = bucket;
     }
 
     @Transactional
@@ -99,31 +106,39 @@ public class IncidentImageService {
 
         validateExtension(originalName, imageType);
 
-        String storedName = UUID.randomUUID()
+        String storedName = "incidents/"
+                + incidentId
+                + "/"
+                + UUID.randomUUID()
                 + "."
                 + imageType.extension();
 
-        Path destination = uploadDirectory.resolve(storedName);
-
-        // DB 저장이나 최종 커밋이 실패하면 저장한 사진도 삭제
+// DB 저장 또는 최종 커밋 실패 시 S3 이미지 정리
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
                     @Override
                     public void afterCompletion(int status) {
                         if (status != STATUS_COMMITTED) {
-                            deleteQuietly(destination);
+                            deleteQuietly(storedName);
                         }
                     }
                 }
         );
 
-        try {
-            Files.createDirectories(uploadDirectory);
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(storedName)
+                .contentType(imageType.contentType())
+                .build();
 
-            try (InputStream input = file.getInputStream()) {
-                Files.copy(input, destination);
-            }
-        } catch (IOException e) {
+        try (InputStream input = file.getInputStream()) {
+            s3Client.putObject(
+                    request,
+                    RequestBody.fromInputStream(input, file.getSize())
+            );
+        } catch (IOException | SdkException e) {
+            log.error("사건 사진 S3 업로드 실패: {}", storedName, e);
+
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "사진 저장에 실패했습니다.",
@@ -151,20 +166,19 @@ public class IncidentImageService {
         List<IncidentImage> images = incidentImageRepository
                 .findByIncident_IdOrderByUploadedAtDescIdDesc(incidentId);
 
-        List<Path> paths = images.stream()
-                .map(image -> uploadDirectory.resolve(
-                        image.getStoredName()
-                ))
+        List<String> keys = images.stream()
+                .map(IncidentImage::getStoredName)
                 .toList();
 
         incidentImageRepository.deleteAll(images);
         incidentImageRepository.flush();
 
+        // 사건 삭제가 최종 커밋된 후 S3 이미지 삭제
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        paths.forEach(
+                        keys.forEach(
                                 IncidentImageService.this::deleteQuietly
                         );
                     }
@@ -264,12 +278,67 @@ public class IncidentImageService {
         }
     }
 
-    private void deleteQuietly(Path path) {
+    private void deleteQuietly(String key) {
         try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.error("사건 사진 정리 실패: {}", path, e);
+            s3Client.deleteObject(
+                    DeleteObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .build()
+            );
+        } catch (SdkException e) {
+            log.error("사건 사진 S3 정리 실패: {}", key, e);
         }
+    }
+
+    @Transactional
+    public void deleteImage(
+            Long memberId,
+            Long incidentId,
+            Long imageId
+    ) {
+        if (memberId == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "다시 로그인해주세요."
+            );
+        }
+
+        Incident incident = incidentRepository
+                .findByIdAndMember_Id(incidentId, memberId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "사건을 찾을 수 없습니다."
+                ));
+
+        entityManager.lock(
+                incident,
+                LockModeType.PESSIMISTIC_WRITE
+        );
+
+        IncidentImage image = incidentImageRepository
+                .findByIdAndIncident_Id(imageId, incidentId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "사진을 찾을 수 없습니다."
+                ));
+
+        String key = image.getStoredName();
+
+        incidentImageRepository.delete(image);
+        incidentImageRepository.flush();
+
+        // DB 삭제가 커밋된 후 S3 파일 삭제
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        if (key.startsWith("incidents/")) {
+                            deleteQuietly(key);
+                        }
+                    }
+                }
+        );
     }
 
     private record ImageType(
@@ -277,4 +346,6 @@ public class IncidentImageService {
             String contentType
     ) {
     }
+
+
 }

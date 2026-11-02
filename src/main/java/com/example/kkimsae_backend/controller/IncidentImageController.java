@@ -33,4 +33,19 @@ public class IncidentImageController {
                 .status(HttpStatus.CREATED)
                 .body(response);
     }
+
+    @DeleteMapping("/{imageId}")
+    public ResponseEntity<Void> delete(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable("incidentId") Long incidentId,
+            @PathVariable("imageId") Long imageId
+    ) {
+        incidentImageService.deleteImage(
+                memberId,
+                incidentId,
+                imageId
+        );
+
+        return ResponseEntity.noContent().build();
+    }
 }
